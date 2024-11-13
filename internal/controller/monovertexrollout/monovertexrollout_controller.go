@@ -259,9 +259,7 @@ func (r *MonoVertexRolloutReconciler) processExistingMonoVertex(ctx context.Cont
 	// if it's a simple change, direct apply
 	// if not and if user-preferred strategy is "Progressive", it will require Progressive rollout to perform the update with guaranteed no-downtime
 	// and capability to rollback an unhealthy one
-	newMonoVertexDefObj, _ := kubernetes.UnstructuredToObject(newMonoVertexDef)
-	existingMonoVertexDefObj, _ := kubernetes.UnstructuredToObject(existingMonoVertexDef)
-	mvNeedsToUpdate, upgradeStrategyType, err := usde.ResourceNeedsUpdating(ctx, newMonoVertexDefObj, existingMonoVertexDefObj)
+	mvNeedsToUpdate, upgradeStrategyType, err := usde.ResourceNeedsUpdating(ctx, newMonoVertexDef, existingMonoVertexDef)
 	if err != nil {
 		return err
 	}
@@ -591,7 +589,7 @@ func (r *MonoVertexRolloutReconciler) IncrementChildCount(ctx context.Context, r
 	return currentNameCount, nil
 }
 
-func (r *MonoVertexRolloutReconciler) ChildIsDrained(ctx context.Context, monoVertexDef *kubernetes.GenericObject) (bool, error) {
+func (r *MonoVertexRolloutReconciler) ChildIsDrained(ctx context.Context, monoVertexDef *unstructured.Unstructured) (bool, error) {
 	monoVertexStatus, err := numaflowtypes.ParseMonoVertexStatus(monoVertexDef)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse MonoVertex Status from MonoVertex CR: %+v, %v", monoVertexDef, err)
@@ -601,13 +599,14 @@ func (r *MonoVertexRolloutReconciler) ChildIsDrained(ctx context.Context, monoVe
 	return monoVertexPhase == "Paused" /*&& monoVertexStatus.DrainedOnPause*/, nil // TODO: should Numaflow implement?
 }
 
-func (r *MonoVertexRolloutReconciler) Drain(ctx context.Context, monoVertexDef *kubernetes.GenericObject) error {
+func (r *MonoVertexRolloutReconciler) Drain(ctx context.Context, monoVertexDef *unstructured.Unstructured) error {
 	patchJson := `{"spec": {"lifecycle": {"desiredPhase": "Paused"}}}`
-	return kubernetes.PatchResource(ctx, r.client, monoVertexDef, patchJson, k8stypes.MergePatchType)
+	monoVertexDefObj, _ := kubernetes.UnstructuredToObject(monoVertexDef)
+	return kubernetes.PatchResource(ctx, r.client, monoVertexDefObj, patchJson, k8stypes.MergePatchType)
 }
 
 // ChildNeedsUpdating() tests for essential equality, with any irrelevant fields eliminated from the comparison
-func (r *MonoVertexRolloutReconciler) ChildNeedsUpdating(ctx context.Context, a *kubernetes.GenericObject, b *kubernetes.GenericObject) (bool, error) {
+func (r *MonoVertexRolloutReconciler) ChildNeedsUpdating(ctx context.Context, a, b *unstructured.Unstructured) (bool, error) {
 	numaLogger := logger.FromContext(ctx)
 	// remove lifecycle.desiredPhase field from comparison to test for equality
 	mvWithoutDesiredPhaseA, err := numaflowtypes.WithoutDesiredPhase(a)

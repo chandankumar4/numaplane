@@ -389,7 +389,9 @@ func Test_pipelineSpecNeedsUpdating(t *testing.T) {
 			obj1.Spec.Raw = []byte(tc.specYaml1)
 			obj2 := &kubernetes.GenericObject{}
 			obj2.Spec.Raw = []byte(tc.specYaml2)
-			needsUpdating, err := r.ChildNeedsUpdating(context.Background(), obj1, obj2)
+			obj1Uns, _ := kubernetes.ObjectToUnstructured(obj1)
+			obj2Uns, _ := kubernetes.ObjectToUnstructured(obj2)
+			needsUpdating, err := r.ChildNeedsUpdating(context.Background(), obj1Uns, obj2Uns)
 			if tc.expectedError {
 				assert.Error(t, err)
 			} else {

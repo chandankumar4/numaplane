@@ -22,7 +22,6 @@ import (
 
 	ctlrcommon "github.com/numaproj/numaplane/internal/controller/common"
 	"github.com/numaproj/numaplane/internal/controller/common/numaflowtypes"
-	"github.com/numaproj/numaplane/internal/util/kubernetes"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/numaproj/numaplane/internal/util/logger"
@@ -148,13 +147,7 @@ func areAllPipelinesPausedOrWontPause(ctx context.Context, k8sClient client.Clie
 			return false, err
 		}
 
-		// TODO: This is temporary conversion until all controllers are migrated to use unstructured objects
-		pipelineObj, err := kubernetes.UnstructuredToObject(&pipeline)
-		if err != nil {
-			return false, err
-		}
-
-		if !numaflowtypes.IsPipelinePausedOrWontPause(ctx, pipelineObj, pipelineRollout) {
+		if !numaflowtypes.IsPipelinePausedOrWontPause(ctx, &pipeline, pipelineRollout) {
 			numaLogger.Debugf("pipeline %q not paused or won't pause", pipeline.GetName())
 			return false, nil
 		}

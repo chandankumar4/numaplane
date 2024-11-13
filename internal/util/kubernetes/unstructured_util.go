@@ -352,11 +352,6 @@ func ListResources(ctx context.Context, c client.Client, gvk schema.GroupVersion
 }
 
 // DeleteResource deletes the resource from the kubernetes cluster
-func DeleteResource(ctx context.Context, c client.Client, obj *GenericObject) error {
-	unstructuredObj, err := ObjectToUnstructured(obj)
-	if err != nil {
-		return err
-	}
-
-	return c.Delete(ctx, unstructuredObj)
+func DeleteResource(ctx context.Context, c client.Client, obj *unstructured.Unstructured) error {
+	return c.Delete(ctx, obj)
 }

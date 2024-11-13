@@ -434,8 +434,10 @@ func Test_ResourceNeedsUpdating(t *testing.T) {
 			} else {
 				configManager.UnsetNamespaceConfig(defaultNamespace)
 			}
+			newDefinitionUns, _ := kubernetes.ObjectToUnstructured(&tc.newDefinition)
+			existingDefinitionUns, _ := kubernetes.ObjectToUnstructured(&tc.existingDefinition)
 
-			needsUpdating, strategy, err := ResourceNeedsUpdating(ctx, &tc.newDefinition, &tc.existingDefinition)
+			needsUpdating, strategy, err := ResourceNeedsUpdating(ctx, newDefinitionUns, existingDefinitionUns)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.expectedNeedsUpdating, needsUpdating)
 			assert.Equal(t, tc.expectedStrategy, strategy)

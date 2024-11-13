@@ -403,9 +403,8 @@ func (r *PipelineRolloutReconciler) reconcile(
 	if err != nil {
 		return false, nil, err
 	}
-	newPipelineDefResultObj, _ := kubernetes.UnstructuredToObject(newPipelineDefResult)
 
-	err = r.processExistingPipeline(ctx, pipelineRollout, existingPipelineDef, newPipelineDefResultObj, syncStartTime)
+	err = r.processExistingPipeline(ctx, pipelineRollout, existingPipelineDefObj, newPipelineDefResult, syncStartTime)
 	return false, existingPipelineDef, err
 }
 
@@ -445,12 +444,12 @@ func (r *PipelineRolloutReconciler) Merge(existingPipeline, newPipeline *unstruc
 }
 
 func (r *PipelineRolloutReconciler) processExistingPipeline(ctx context.Context, pipelineRollout *apiv1.PipelineRollout,
-	existingPipelineDef *kubernetes.GenericObject, newPipelineDef *kubernetes.GenericObject, syncStartTime time.Time) error {
+	existingPipelineDef, newPipelineDef *unstructured.Unstructured, syncStartTime time.Time) error {
 
 	numaLogger := logger.FromContext(ctx)
 
 	// what is the preferred strategy for this namespace?
-	userPreferredStrategy, err := usde.GetUserStrategy(ctx, newPipelineDef.Namespace)
+	userPreferredStrategy, err := usde.GetUserStrategy(ctx, newPipelineDef.GetNamespace())
 	if err != nil {
 		return err
 	}
@@ -538,8 +537,7 @@ func (r *PipelineRolloutReconciler) processExistingPipeline(ctx context.Context,
 	case apiv1.UpgradeStrategyProgressive:
 		if pipelineNeedsToUpdate {
 			numaLogger.Debug("processing pipeline with Progressive")
-			existingPipelineDefObj, _ := kubernetes.ObjectToUnstructured(existingPipelineDef)
-			done, err := progressive.ProcessResourceWithProgressive(ctx, pipelineRollout, existingPipelineDefObj, r, r.client)
+			done, err := progressive.ProcessResourceWithProgressive(ctx, pipelineRollout, existingPipelineDef, r, r.client)
 			if err != nil {
 				return err
 			}
@@ -731,8 +729,8 @@ func (r *PipelineRolloutReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return nil
 }
 
-func updatePipelineSpec(ctx context.Context, c client.Client, obj *kubernetes.GenericObject) error {
-	return kubernetes.UpdateResource(ctx, c, obj)
+func updatePipelineSpec(ctx context.Context, c client.Client, obj *unstructured.Unstructured) error {
+	return kubernetes.UpdateResourceUnstructured(ctx, c, obj)
 }
 
 // take the Metadata (Labels and Annotations) specified in the PipelineRollout plus any others that apply to all Pipelines
@@ -857,7 +855,7 @@ func (r *PipelineRolloutReconciler) IncrementChildCount(ctx context.Context, rol
 	return currentNameCount, nil
 }
 
-func (r *PipelineRolloutReconciler) ChildIsDrained(ctx context.Context, pipelineDef *kubernetes.GenericObject) (bool, error) {
+func (r *PipelineRolloutReconciler) ChildIsDrained(ctx context.Context, pipelineDef *unstructured.Unstructured) (bool, error) {
 	pipelineStatus, err := numaflowtypes.ParsePipelineStatus(pipelineDef)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse Pipeline Status from pipeline CR: %+v, %v", pipelineDef, err)
@@ -867,13 +865,14 @@ func (r *PipelineRolloutReconciler) ChildIsDrained(ctx context.Context, pipeline
 	return pipelinePhase == numaflowv1.PipelinePhasePaused && pipelineStatus.DrainedOnPause, nil
 }
 
-func (r *PipelineRolloutReconciler) Drain(ctx context.Context, pipeline *kubernetes.GenericObject) error {
+func (r *PipelineRolloutReconciler) Drain(ctx context.Context, pipeline *unstructured.Unstructured) error {
 	patchJson := `{"spec": {"lifecycle": {"desiredPhase": "Paused"}}}`
-	return kubernetes.PatchResource(ctx, r.client, pipeline, patchJson, k8stypes.MergePatchType)
+	pipelineObj, _ := kubernetes.UnstructuredToObject(pipeline)
+	return kubernetes.PatchResource(ctx, r.client, pipelineObj, patchJson, k8stypes.MergePatchType)
 }
 
 // ChildNeedsUpdating() tests for essential equality, with any irrelevant fields eliminated from the comparison
-func (r *PipelineRolloutReconciler) ChildNeedsUpdating(ctx context.Context, a *kubernetes.GenericObject, b *kubernetes.GenericObject) (bool, error) {
+func (r *PipelineRolloutReconciler) ChildNeedsUpdating(ctx context.Context, a, b *unstructured.Unstructured) (bool, error) {
 	numaLogger := logger.FromContext(ctx)
 	// remove lifecycle.desiredPhase field from comparison to test for equality
 	pipelineWithoutDesiredPhaseA, err := numaflowtypes.WithoutDesiredPhase(a)

@@ -133,7 +133,8 @@ func TestCreateUpdateGetListDeleteCR(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Len(t, pipelineList.Items, 1)
 
-	err = DeleteResource(context.Background(), runtimeClient, pipelineObject)
+	pipelineObjectUns, _ := ObjectToUnstructured(pipelineObject)
+	err = DeleteResource(context.Background(), runtimeClient, pipelineObjectUns)
 	assert.Nil(t, err)
 	pipelineList, err = ListLiveUnstructuredResource(context.Background(), common.NumaflowAPIGroup, common.NumaflowAPIVersion, "pipelines", namespace, "test=value", "")
 	assert.Nil(t, err)
