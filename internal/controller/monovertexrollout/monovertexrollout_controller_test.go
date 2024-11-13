@@ -119,13 +119,12 @@ func Test_withExistingMvtxReplicas(t *testing.T) {
 			newMvtxSpec.Replicas = tt.newReplicas
 			newGenericMvtx := fakeGenericMonoVertex(t, newMvtxSpec)
 
-			result, err := withExistingMvtxReplicas(existingGenericMvtx, newGenericMvtx)
+			existingGenericMvtxUns, _ := kubernetes.ObjectToUnstructured(existingGenericMvtx)
+			newGenericMvtxUns, _ := kubernetes.ObjectToUnstructured(newGenericMvtx)
+			result, err := withExistingMvtxReplicas(existingGenericMvtxUns, newGenericMvtxUns)
 			assert.NoError(t, err)
 
-			unstruc, err := kubernetes.ObjectToUnstructured(result)
-			assert.NoError(t, err)
-
-			expected, existing, err := unstructured.NestedFloat64(unstruc.Object, "spec", "replicas")
+			expected, existing, err := unstructured.NestedFloat64(result.Object, "spec", "replicas")
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expected != nil, existing)
 			if tt.expected != nil {

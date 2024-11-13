@@ -610,7 +610,7 @@ func (r *ISBServiceRolloutReconciler) ErrorHandler(isbServiceRollout *apiv1.ISBS
 }
 
 func generateNewISBServiceDef(isbServiceRollout *apiv1.ISBServiceRollout) *unstructured.Unstructured {
-	newISBServiceDef := &unstructured.Unstructured{}
+	newISBServiceDef := &unstructured.Unstructured{Object: make(map[string]interface{})}
 	newISBServiceDef.SetName(isbServiceRollout.Name)
 	newISBServiceDef.SetNamespace(isbServiceRollout.Namespace)
 	newISBServiceDef.SetLabels(isbServiceRollout.Spec.InterStepBufferService.Labels)

@@ -19,6 +19,7 @@ package progressive
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,10 +36,10 @@ import (
 // taking down the original child once the new one is healthy
 type progressiveController interface {
 	// listChildren lists all children of the Rollout identified by the selectors
-	ListChildren(ctx context.Context, rolloutObject ctlrcommon.RolloutObject, labelSelector string, fieldSelector string) ([]*kubernetes.GenericObject, error)
+	ListChildren(ctx context.Context, rolloutObject ctlrcommon.RolloutObject, labelSelector string, fieldSelector string) (*unstructured.UnstructuredList, error)
 
 	// createBaseChildDefinition creates a Kubernetes definition for a child resource of the Rollout with the given name
-	CreateBaseChildDefinition(rolloutObject ctlrcommon.RolloutObject, name string) (*kubernetes.GenericObject, error)
+	CreateBaseChildDefinition(rolloutObject ctlrcommon.RolloutObject, name string) (*unstructured.Unstructured, error)
 
 	// incrementChildCount updates the count of children for the Resource in Kubernetes and returns the index that should be used for the next child
 	IncrementChildCount(ctx context.Context, rolloutObject ctlrcommon.RolloutObject) (int32, error)
@@ -53,12 +54,12 @@ type progressiveController interface {
 	ChildNeedsUpdating(ctx context.Context, existingChild *kubernetes.GenericObject, newChildDefinition *kubernetes.GenericObject) (bool, error)
 
 	// merge is able to take an existing child object and override anything needed from the new one into it to create a revised new object
-	Merge(existingObj *kubernetes.GenericObject, newObj *kubernetes.GenericObject) (*kubernetes.GenericObject, error)
+	Merge(existingObj, newObj *unstructured.Unstructured) (*unstructured.Unstructured, error)
 }
 
 // return whether we're done, and error if any
 func ProcessResourceWithProgressive(ctx context.Context, rolloutObject ctlrcommon.RolloutObject,
-	existingPromotedChild *kubernetes.GenericObject, controller progressiveController, c client.Client) (bool, error) {
+	existingPromotedChild *unstructured.Unstructured, controller progressiveController, c client.Client) (bool, error) {
 
 	numaLogger := logger.FromContext(ctx)
 
@@ -68,15 +69,15 @@ func ProcessResourceWithProgressive(ctx context.Context, rolloutObject ctlrcommo
 	}
 
 	// Get the Upgrading object to see if it exists
-	existingUpgradingChildDef, err := kubernetes.GetLiveResource(ctx, newUpgradingChildDef, rolloutObject.GetChildPluralName())
+	existingUpgradingChildDef, err := kubernetes.GetLiveUnstructuredResource(ctx, newUpgradingChildDef, rolloutObject.GetChildPluralName())
 	if err != nil {
 		// create object as it doesn't exist
 		if apierrors.IsNotFound(err) {
-			numaLogger.Debugf("Upgrading child of type %s %s/%s doesn't exist so creating", newUpgradingChildDef.Kind, newUpgradingChildDef.Namespace, newUpgradingChildDef.Name)
-			err = kubernetes.CreateResource(ctx, c, newUpgradingChildDef)
+			numaLogger.Debugf("Upgrading child of type %s %s/%s doesn't exist so creating", newUpgradingChildDef.GetKind(), newUpgradingChildDef.GetNamespace(), newUpgradingChildDef.GetName())
+			err = kubernetes.CreateResourceUnstructured(ctx, c, newUpgradingChildDef)
 			return false, err
 		} else {
-			return false, fmt.Errorf("error getting %s: %v", newUpgradingChildDef.Kind, err)
+			return false, fmt.Errorf("error getting %s: %v", newUpgradingChildDef.GetKind(), err)
 		}
 	}
 	newUpgradingChildDef, err = controller.Merge(existingUpgradingChildDef, newUpgradingChildDef)
@@ -84,7 +85,11 @@ func ProcessResourceWithProgressive(ctx context.Context, rolloutObject ctlrcommo
 		return false, err
 	}
 
-	done, err := processUpgradingChild(ctx, rolloutObject, controller, existingPromotedChild, newUpgradingChildDef, existingUpgradingChildDef, c)
+	existingPromotedChildObj, _ := kubernetes.UnstructuredToObject(existingPromotedChild)
+	newUpgradingChildDefObj, _ := kubernetes.UnstructuredToObject(newUpgradingChildDef)
+	existingUpgradingChildDefObj, _ := kubernetes.UnstructuredToObject(existingUpgradingChildDef)
+
+	done, err := processUpgradingChild(ctx, rolloutObject, controller, existingPromotedChildObj, newUpgradingChildDefObj, existingUpgradingChildDefObj, c)
 	if err != nil {
 		return false, err
 	}
@@ -93,7 +98,7 @@ func ProcessResourceWithProgressive(ctx context.Context, rolloutObject ctlrcommo
 }
 
 // create the definition for the child of the Rollout which is the one labeled "upgrading"
-func makeUpgradingObjectDefinition(ctx context.Context, rolloutObject ctlrcommon.RolloutObject, controller progressiveController) (*kubernetes.GenericObject, error) {
+func makeUpgradingObjectDefinition(ctx context.Context, rolloutObject ctlrcommon.RolloutObject, controller progressiveController) (*unstructured.Unstructured, error) {
 
 	numaLogger := logger.FromContext(ctx)
 
@@ -107,7 +112,9 @@ func makeUpgradingObjectDefinition(ctx context.Context, rolloutObject ctlrcommon
 		return nil, err
 	}
 
-	upgradingChild.Labels[common.LabelKeyUpgradeState] = string(common.LabelValueUpgradeInProgress)
+	upgradingChild.SetLabels(map[string]string{
+		common.LabelKeyUpgradeState: string(common.LabelValueUpgradeInProgress),
+	})
 
 	return upgradingChild, nil
 }
@@ -121,16 +128,16 @@ func GetChildName(ctx context.Context, rolloutObject ctlrcommon.RolloutObject, c
 	if err != nil {
 		return "", err
 	}
-	if len(children) > 1 {
+	if len(children.Items) > 1 {
 		return "", fmt.Errorf("there should only be one promoted or upgrade in progress pipeline")
-	} else if len(children) == 0 {
+	} else if len(children.Items) == 0 {
 		index, err := controller.IncrementChildCount(ctx, rolloutObject)
 		if err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("%s-%d", rolloutObject.GetObjectMeta().Name, index), nil
 	}
-	return children[0].Name, nil
+	return children.Items[0].GetName(), nil
 }
 
 // return whether we're done, and error if any
@@ -237,8 +244,8 @@ func GarbageCollectChildren(
 
 	numaLogger.WithValues("recylableObjects", recyclableObjects).Debug("recycling")
 
-	for _, recyclableChild := range recyclableObjects {
-		err = recycle(ctx, recyclableChild, rolloutObject.GetChildPluralName(), controller, c)
+	for _, recyclableChild := range recyclableObjects.Items {
+		err = recycle(ctx, &recyclableChild, rolloutObject.GetChildPluralName(), controller, c)
 		if err != nil {
 			return err
 		}
@@ -249,7 +256,7 @@ func getRecyclableObjects(
 	ctx context.Context,
 	rolloutObject ctlrcommon.RolloutObject,
 	controller progressiveController,
-) ([]*kubernetes.GenericObject, error) {
+) (*unstructured.UnstructuredList, error) {
 	return controller.ListChildren(ctx, rolloutObject, fmt.Sprintf(
 		"%s=%s,%s=%s", common.LabelKeyParentRollout, rolloutObject.GetObjectMeta().Name,
 		common.LabelKeyUpgradeState, common.LabelValueUpgradeRecyclable,
@@ -257,17 +264,18 @@ func getRecyclableObjects(
 }
 
 func recycle(ctx context.Context,
-	childObject *kubernetes.GenericObject,
+	childObject *unstructured.Unstructured,
 	childPluralName string,
 	controller progressiveController,
 	c client.Client,
 ) error {
-	isDrained, err := controller.ChildIsDrained(ctx, childObject)
+	childObjectObj, _ := kubernetes.UnstructuredToObject(childObject)
+	isDrained, err := controller.ChildIsDrained(ctx, childObjectObj)
 	if err != nil {
 		return err
 	}
 	if isDrained {
-		err = kubernetes.DeleteResource(ctx, c, childObject)
+		err = kubernetes.DeleteResource(ctx, c, childObjectObj)
 		if err != nil {
 			return err
 		}

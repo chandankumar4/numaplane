@@ -396,11 +396,16 @@ func (r *PipelineRolloutReconciler) reconcile(
 		numaLogger.Debugf("PipelineRollout %s failed because %s", pipelineRollout.Name, errStr)
 		return false, existingPipelineDef, errors.New(errStr)
 	}
-	newPipelineDef, err = r.Merge(existingPipelineDef, newPipelineDef)
+	existingPipelineDefObj, _ := kubernetes.ObjectToUnstructured(existingPipelineDef)
+	newPipelineDefObj, _ := kubernetes.ObjectToUnstructured(newPipelineDef)
+
+	newPipelineDefResult, err := r.Merge(existingPipelineDefObj, newPipelineDefObj)
 	if err != nil {
 		return false, nil, err
 	}
-	err = r.processExistingPipeline(ctx, pipelineRollout, existingPipelineDef, newPipelineDef, syncStartTime)
+	newPipelineDefResultObj, _ := kubernetes.UnstructuredToObject(newPipelineDefResult)
+
+	err = r.processExistingPipeline(ctx, pipelineRollout, existingPipelineDef, newPipelineDefResultObj, syncStartTime)
 	return false, existingPipelineDef, err
 }
 
@@ -419,21 +424,23 @@ func checkOwnerRef(ownerRefs []metav1.OwnerReference, uid k8stypes.UID) bool {
 }
 
 // take the existing pipeline and merge anything needed from the new pipeline definition
-func (r *PipelineRolloutReconciler) Merge(existingPipeline *kubernetes.GenericObject, newPipeline *kubernetes.GenericObject) (*kubernetes.GenericObject, error) {
+func (r *PipelineRolloutReconciler) Merge(existingPipeline, newPipeline *unstructured.Unstructured) (*unstructured.Unstructured, error) {
 	resultPipeline := existingPipeline.DeepCopy()
-	resultPipeline.Spec = *newPipeline.Spec.DeepCopy()
-	if resultPipeline.Labels == nil {
-		resultPipeline.Labels = map[string]string{}
+
+	specAsMap, _, err := unstructured.NestedMap(newPipeline.Object, "spec")
+	if err != nil {
+		return resultPipeline, fmt.Errorf("failed to get spec from new MonoVertex: %w", err)
 	}
-	for key, value := range newPipeline.Labels {
-		resultPipeline.Labels[key] = value
+	resultPipeline.Object["spec"] = specAsMap
+
+	if newPipeline.GetAnnotations() != nil {
+		resultPipeline.SetAnnotations(newPipeline.GetAnnotations())
 	}
-	if resultPipeline.Annotations == nil {
-		resultPipeline.Annotations = map[string]string{}
+
+	if newPipeline.GetLabels() != nil {
+		resultPipeline.SetLabels(newPipeline.GetLabels())
 	}
-	for key, value := range newPipeline.Annotations {
-		resultPipeline.Annotations[key] = value
-	}
+
 	return resultPipeline, nil
 }
 
@@ -498,20 +505,23 @@ func (r *PipelineRolloutReconciler) processExistingPipeline(ctx context.Context,
 
 	// don't risk out-of-date cache while performing PPND or Progressive strategy - get
 	// the most current version of the Pipeline just in case
-	if inProgressStrategy != apiv1.UpgradeStrategyNoOp {
-		existingPipelineDef, err = kubernetes.GetLiveResource(ctx, newPipelineDef, "pipelines")
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				numaLogger.WithValues("pipelineDefinition", *newPipelineDef).Warn("Pipeline not found.")
-			} else {
-				return fmt.Errorf("error getting Pipeline for status processing: %v", err)
-			}
-		}
-		newPipelineDef, err = r.Merge(existingPipelineDef, newPipelineDef)
-		if err != nil {
-			return err
-		}
-	}
+	//if inProgressStrategy != apiv1.UpgradeStrategyNoOp {
+	//	existingPipelineDef, err = kubernetes.GetLiveResource(ctx, newPipelineDef, "pipelines")
+	//	if err != nil {
+	//		if apierrors.IsNotFound(err) {
+	//			numaLogger.WithValues("pipelineDefinition", *newPipelineDef).Warn("Pipeline not found.")
+	//		} else {
+	//			return fmt.Errorf("error getting Pipeline for status processing: %v", err)
+	//		}
+	//	}
+	//	existingPipelineDefObj, _ := kubernetes.ObjectToUnstructured(existingPipelineDef)
+	//	newPipelineDefObj, _ := kubernetes.ObjectToUnstructured(newPipelineDef)
+	//
+	//	newPipelineDef, err = r.Merge(existingPipelineDefObj, newPipelineDefObj)
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
 
 	// now do whatever the inProgressStrategy is
 	switch inProgressStrategy {
@@ -528,7 +538,8 @@ func (r *PipelineRolloutReconciler) processExistingPipeline(ctx context.Context,
 	case apiv1.UpgradeStrategyProgressive:
 		if pipelineNeedsToUpdate {
 			numaLogger.Debug("processing pipeline with Progressive")
-			done, err := progressive.ProcessResourceWithProgressive(ctx, pipelineRollout, existingPipelineDef, r, r.client)
+			existingPipelineDefObj, _ := kubernetes.ObjectToUnstructured(existingPipelineDef)
+			done, err := progressive.ProcessResourceWithProgressive(ctx, pipelineRollout, existingPipelineDefObj, r, r.client)
 			if err != nil {
 				return err
 			}
@@ -793,20 +804,24 @@ func (r *PipelineRolloutReconciler) makePipelineDefinition(
 }
 
 // the following functions enable PipelineRolloutReconciler to implement progressiveController interface
-func (r *PipelineRolloutReconciler) ListChildren(ctx context.Context, rolloutObject ctlrcommon.RolloutObject, labelSelector string, fieldSelector string) ([]*kubernetes.GenericObject, error) {
+func (r *PipelineRolloutReconciler) ListChildren(ctx context.Context, rolloutObject ctlrcommon.RolloutObject, labelSelector string, fieldSelector string) (*unstructured.UnstructuredList, error) {
 	pipelineRollout := rolloutObject.(*apiv1.PipelineRollout)
-	return kubernetes.ListLiveResource(
+	return kubernetes.ListLiveUnstructuredResource(
 		ctx, common.NumaflowAPIGroup, common.NumaflowAPIVersion, "pipelines",
 		pipelineRollout.Namespace, labelSelector, fieldSelector)
 }
 
-func (r *PipelineRolloutReconciler) CreateBaseChildDefinition(rolloutObject ctlrcommon.RolloutObject, name string) (*kubernetes.GenericObject, error) {
+func (r *PipelineRolloutReconciler) CreateBaseChildDefinition(rolloutObject ctlrcommon.RolloutObject, name string) (*unstructured.Unstructured, error) {
 	pipelineRollout := rolloutObject.(*apiv1.PipelineRollout)
 	metadata, err := getBasePipelineMetadata(pipelineRollout)
 	if err != nil {
 		return nil, err
 	}
-	return r.makePipelineDefinition(pipelineRollout, name, metadata)
+	def, err := r.makePipelineDefinition(pipelineRollout, name, metadata)
+	if err != nil {
+		return nil, err
+	}
+	return kubernetes.ObjectToUnstructured(def)
 }
 
 func (r *PipelineRolloutReconciler) getCurrentChildCount(rolloutObject ctlrcommon.RolloutObject) (int32, bool) {

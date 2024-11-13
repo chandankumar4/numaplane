@@ -73,7 +73,7 @@ func ParseStatusUnstructured(obj *unstructured.Unstructured) (GenericStatus, err
 
 func GetLiveUnstructuredResource(
 	ctx context.Context,
-	object *GenericObject,
+	object *unstructured.Unstructured,
 	pluralName string,
 ) (*unstructured.Unstructured, error) {
 	numaLogger := logger.FromContext(ctx)
@@ -82,9 +82,9 @@ func GetLiveUnstructuredResource(
 		return nil, err
 	}
 
-	unstruc, err := dynamicClient.Resource(gvr).Namespace(object.Namespace).Get(ctx, object.Name, metav1.GetOptions{})
+	unstruc, err := dynamicClient.Resource(gvr).Namespace(object.GetNamespace()).Get(ctx, object.GetName(), metav1.GetOptions{})
 	if unstruc != nil {
-		numaLogger.Verbosef("retrieved resource %s/%s of type %+v with value %+v", object.Namespace, object.Name, gvr, unstruc.Object)
+		numaLogger.Verbosef("retrieved resource %s/%s of type %+v with value %+v", object.GetNamespace(), object.GetName(), gvr, unstruc.Object)
 	}
 	return unstruc, err
 }
@@ -108,7 +108,8 @@ func ListLiveUnstructuredResource(
 
 // GetLiveResource converts the generic object to unstructured object and fetches the resource from the API server
 func GetLiveResource(ctx context.Context, object *GenericObject, pluralName string) (*GenericObject, error) {
-	uns, err := GetLiveUnstructuredResource(ctx, object, pluralName)
+	objectUns, _ := ObjectToUnstructured(object)
+	uns, err := GetLiveUnstructuredResource(ctx, objectUns, pluralName)
 	if uns != nil {
 		return UnstructuredToObject(uns)
 	} else {
@@ -204,8 +205,8 @@ func UnstructuredToObject(u *unstructured.Unstructured) (*GenericObject, error) 
 	return &genericObject, err
 }
 
-func getGroupVersionResource(object *GenericObject, pluralName string) (schema.GroupVersionResource, error) {
-	group, version, err := parseApiVersion(object.APIVersion)
+func getGroupVersionResource(object *unstructured.Unstructured, pluralName string) (schema.GroupVersionResource, error) {
+	group, version, err := parseApiVersion(object.GetAPIVersion())
 	if err != nil {
 		return schema.GroupVersionResource{}, err
 	}
