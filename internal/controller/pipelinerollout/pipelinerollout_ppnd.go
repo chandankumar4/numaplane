@@ -224,18 +224,17 @@ func (r *PipelineRolloutReconciler) setPipelineLifecycle(ctx context.Context, pa
 	}
 	lifeCycleIsPaused := existingPipelineSpec.Lifecycle.DesiredPhase == string(numaflowv1.PipelinePhasePaused)
 
-	existingPipelineDefObj, _ := kubernetes.UnstructuredToObject(existingPipelineDef)
 	if pause && !lifeCycleIsPaused {
 		numaLogger.Info("pausing pipeline")
 		r.recorder.Eventf(existingPipelineDef, "Normal", "PipelinePause", "pausing pipeline")
-		if err := ppnd.GetPauseModule().PausePipeline(ctx, r.client, existingPipelineDefObj); err != nil {
+		if err := ppnd.GetPauseModule().PausePipeline(ctx, r.client, existingPipelineDef); err != nil {
 			return err
 		}
 	} else if !pause && lifeCycleIsPaused {
 		numaLogger.Info("resuming pipeline")
 		r.recorder.Eventf(existingPipelineDef, "Normal", "PipelineResume", "resuming pipeline")
 
-		run, err := ppnd.GetPauseModule().RunPipelineIfSafe(ctx, r.client, existingPipelineDefObj)
+		run, err := ppnd.GetPauseModule().RunPipelineIfSafe(ctx, r.client, existingPipelineDef)
 		if err != nil {
 			return err
 		}

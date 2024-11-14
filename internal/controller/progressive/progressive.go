@@ -211,8 +211,7 @@ func processUpgradingChild(
 func updateUpgradeState(ctx context.Context, c client.Client, upgradeState common.UpgradeState, childObject *unstructured.Unstructured, rolloutObject ctlrcommon.RolloutObject) error {
 	childObject.SetLabels(map[string]string{common.LabelKeyUpgradeState: string(upgradeState)})
 	patchJson := `{"metadata":{"labels":{"` + common.LabelKeyUpgradeState + `":"` + string(upgradeState) + `"}}}`
-	childObjectObj, _ := kubernetes.UnstructuredToObject(childObject)
-	return kubernetes.PatchResource(ctx, c, childObjectObj, patchJson, k8stypes.MergePatchType)
+	return kubernetes.PatchResource(ctx, c, childObject, patchJson, k8stypes.MergePatchType)
 }
 
 func isNumaflowChildReady(upgradingObjectStatus *kubernetes.GenericStatus) bool {

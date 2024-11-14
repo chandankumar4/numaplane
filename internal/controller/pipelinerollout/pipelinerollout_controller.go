@@ -867,8 +867,7 @@ func (r *PipelineRolloutReconciler) ChildIsDrained(ctx context.Context, pipeline
 
 func (r *PipelineRolloutReconciler) Drain(ctx context.Context, pipeline *unstructured.Unstructured) error {
 	patchJson := `{"spec": {"lifecycle": {"desiredPhase": "Paused"}}}`
-	pipelineObj, _ := kubernetes.UnstructuredToObject(pipeline)
-	return kubernetes.PatchResource(ctx, r.client, pipelineObj, patchJson, k8stypes.MergePatchType)
+	return kubernetes.PatchResource(ctx, r.client, pipeline, patchJson, k8stypes.MergePatchType)
 }
 
 // ChildNeedsUpdating() tests for essential equality, with any irrelevant fields eliminated from the comparison

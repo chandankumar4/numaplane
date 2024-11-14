@@ -4,17 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/numaproj/numaplane/internal/util"
+	"k8s.io/apimachinery/pkg/runtime"
 	"strings"
 
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/numaproj/numaplane/internal/util"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/numaproj/numaplane/internal/util/logger"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -53,6 +53,9 @@ func ParseStatus(obj *GenericObject) (GenericStatus, error) {
 
 // TODO: This is a temporary function which will be removed once all the controller are migrated to use Unstructured Object
 func ParseStatusUnstructured(obj *unstructured.Unstructured) (GenericStatus, error) {
+	//if obj == nil || len(obj.Object) == 0 {
+	//	return GenericStatus{}, nil
+	//}
 	statusRaw, found, err := unstructured.NestedFieldNoCopy(obj.Object, "status")
 	if !found || err != nil {
 		return GenericStatus{}, nil
@@ -117,57 +120,46 @@ func GetLiveResource(ctx context.Context, object *GenericObject, pluralName stri
 	}
 }
 
-func ListLiveResource(ctx context.Context,
-	apiGroup string,
-	version string,
-	pluralName string,
-	namespace string,
-	// set to empty string if none
-	labelSelector string,
-	// set to empty string if none
-	fieldSelector string) ([]*GenericObject, error) {
-	numaLogger := logger.FromContext(ctx)
-	unsList, err := ListLiveUnstructuredResource(ctx, apiGroup, version, pluralName, namespace, labelSelector, fieldSelector)
-	if err != nil {
-		return nil, err
-	}
-
-	if unsList != nil {
-		numaLogger.Debugf("found %d %s", len(unsList.Items), pluralName)
-		objects := make([]*GenericObject, len(unsList.Items))
-		for i, uns := range unsList.Items {
-			obj, err := UnstructuredToObject(&uns)
-			if err != nil {
-				return nil, err
-			}
-			objects[i] = obj
-		}
-		return objects, nil
-	}
-
-	return nil, err
-}
+//func ListLiveResource(ctx context.Context,
+//	apiGroup string,
+//	version string,
+//	pluralName string,
+//	namespace string,
+//	// set to empty string if none
+//	labelSelector string,
+//	// set to empty string if none
+//	fieldSelector string) ([]*GenericObject, error) {
+//	numaLogger := logger.FromContext(ctx)
+//	unsList, err := ListLiveUnstructuredResource(ctx, apiGroup, version, pluralName, namespace, labelSelector, fieldSelector)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	if unsList != nil {
+//		numaLogger.Debugf("found %d %s", len(unsList.Items), pluralName)
+//		objects := make([]*GenericObject, len(unsList.Items))
+//		for i, uns := range unsList.Items {
+//			obj, err := UnstructuredToObject(&uns)
+//			if err != nil {
+//				return nil, err
+//			}
+//			objects[i] = obj
+//		}
+//		return objects, nil
+//	}
+//
+//	return nil, err
+//}
 
 func PatchResource(
 	ctx context.Context,
 	c client.Client,
-	obj *GenericObject,
+	obj *unstructured.Unstructured,
 	patch string,
 	patchType k8stypes.PatchType,
 ) error {
-
-	unstructuredObj, err := ObjectToUnstructured(obj)
-	if err != nil {
+	if err := c.Patch(ctx, obj, client.RawPatch(patchType, []byte(patch))); err != nil {
 		return err
-	}
-	if err = c.Patch(ctx, unstructuredObj, client.RawPatch(patchType, []byte(patch))); err != nil {
-		return err
-	} else {
-		result, err := UnstructuredToObject(unstructuredObj)
-		if err != nil {
-			return err
-		}
-		*obj = *result
 	}
 
 	return nil
@@ -313,25 +305,25 @@ func GetResourceUnstructured(ctx context.Context, c client.Client, gvk schema.Gr
 	return unstructuredObj, nil
 }
 
-// UpdateResource updates the resource in the kubernetes cluster
-func UpdateResource(ctx context.Context, c client.Client, obj *GenericObject) error {
-	unstructuredObj, err := ObjectToUnstructured(obj)
-	if err != nil {
-		return err
-	}
-
-	if err = c.Update(ctx, unstructuredObj); err != nil {
-		return err
-	} else {
-		result, err := UnstructuredToObject(unstructuredObj)
-		if err != nil {
-			return err
-		}
-		*obj = *result
-	}
-
-	return nil
-}
+//// UpdateResource updates the resource in the kubernetes cluster
+//func UpdateResource(ctx context.Context, c client.Client, obj *GenericObject) error {
+//	unstructuredObj, err := ObjectToUnstructured(obj)
+//	if err != nil {
+//		return err
+//	}
+//
+//	if err = c.Update(ctx, unstructuredObj); err != nil {
+//		return err
+//	} else {
+//		result, err := UnstructuredToObject(unstructuredObj)
+//		if err != nil {
+//			return err
+//		}
+//		*obj = *result
+//	}
+//
+//	return nil
+//}
 
 // UpdateResourceUnstructured updates the resource in the kubernetes cluster
 // TODO: This is a temporary function which will be removed once all the controller are migrated to use Unstructured Object

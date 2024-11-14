@@ -601,8 +601,7 @@ func (r *MonoVertexRolloutReconciler) ChildIsDrained(ctx context.Context, monoVe
 
 func (r *MonoVertexRolloutReconciler) Drain(ctx context.Context, monoVertexDef *unstructured.Unstructured) error {
 	patchJson := `{"spec": {"lifecycle": {"desiredPhase": "Paused"}}}`
-	monoVertexDefObj, _ := kubernetes.UnstructuredToObject(monoVertexDef)
-	return kubernetes.PatchResource(ctx, r.client, monoVertexDefObj, patchJson, k8stypes.MergePatchType)
+	return kubernetes.PatchResource(ctx, r.client, monoVertexDef, patchJson, k8stypes.MergePatchType)
 }
 
 // ChildNeedsUpdating() tests for essential equality, with any irrelevant fields eliminated from the comparison
