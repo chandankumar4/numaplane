@@ -114,7 +114,7 @@ func main() {
 
 	ctx := logger.WithLogger(context.Background(), numaLogger)
 
-	syncPeriod := time.Minute * 1
+	syncPeriod := 2 * time.Minute
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
@@ -228,7 +228,6 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-
 }
 
 func loadConfigs() {
