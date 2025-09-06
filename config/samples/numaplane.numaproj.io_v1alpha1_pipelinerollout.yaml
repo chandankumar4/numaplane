@@ -49,8 +49,9 @@ spec:
             min: 3
             max: 5
           udf:
-            builtin:
-              name: cat # A built-in UDF which simply cats the message
+            Container:
+              Image: "quay.io/numaio/numaflow-go/map-cat:stable" # A built-in UDF which simply cats the message
+              ImagePullPolicy: "ALWAYS",
         - name: out
           sink:
             # A simple log printing sink
